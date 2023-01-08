@@ -351,18 +351,27 @@ function createCanvas() { // put centered image on canvas
 		generatePreview(i, mipwidth, mipheight / frameCount);
 	}
 }
-
-function convert() {
+var isConverting = false;
+async function convert() {
+	if (isConverting) return;
+	isConverting = true;
 	blockPosition = 0;
-	document.body.style.cursor = "url(img/aero_derpy_busy.ani), wait";
+	document.body.style.cursor = "wait";
 	
 	createCanvas();
 	blockCount = 0;
-	if (hasMipmaps)
-		for (var i=getReducedMipmapCount(); i>0; i--) convertPixels(i,width/(Math.pow(2,i)),getTotalImageHeight()/(Math.pow(2,i)));
-	convertPixels(0, width, getTotalImageHeight());
+	const phraseElement = document.getElementById('process_phrase');
+	if (hasMipmaps) {
+		for (var i=getReducedMipmapCount(); i>0; i--) {
+			phraseElement.innerHTML = "Converting mipmap: " + width/(Math.pow(2,i)) + "x" + getTotalImageHeight()/(Math.pow(2,i));
+			await convertPixels(i,width/(Math.pow(2,i)),getTotalImageHeight()/(Math.pow(2,i)));
+		}
+	}
+	phraseElement.innerHTML = "Converting image: " + width + "x" + getTotalImageHeight();
+	await convertPixels(0, width, getTotalImageHeight());
 	converted = true;
-	//document.getElementById('inputWrapper').style.display = "none";
+	isConverting = false;
+	phraseElement.innerHTML = "Done."
 	document.getElementById('saveButton').disabled = false;
 	document.getElementById('saveButtonVMT').disabled = false;
 	document.getElementById('files0').disabled = false;
@@ -370,7 +379,9 @@ function convert() {
 	generatePreview(0,width, height);
 }
 
-
+function sleep() {
+	return new Promise(resolve => setTimeout(resolve, 0));
+}
 
 function changeMipmap(evt,mipmapNumber) { // this code, it scares me
 	var files = evt.target.files; // FileList object
@@ -488,14 +499,13 @@ function setOutputType(el){
 
 
 
-function convertPixels(canvas, fwidth, fheight) {
+async function convertPixels(canvas, fwidth, fheight) {
 	if (shortened)
 		fwidth = fwidth - 4;
 	
 	
 	blockPosition = 0;
 	var isdxt = outputType == 13 || outputType == 15;
-	var origpixels = fwidth*fheight;
 	var outimg;
 	if (isdxt) {
 		outimg = new Int32Array(Math.ceil(fwidth/4)*4*Math.ceil(fheight/4)*4/ (outputType == 13 ? 8 : 4));
@@ -509,8 +519,6 @@ function convertPixels(canvas, fwidth, fheight) {
 		else
 			var pix = mipmaps[canvas].getContext("2d").getImageData(mipmaps[canvas].width/2 - fwidth/2+d*fwidth, 0, fwidth, fheight);
 		if (isdxt) {
-
-			var progressEl= document.getElementById("progress");
 			var quality = parseInt(document.getElementById("dxtquality").value);
 			m_nRefinementSteps = quality;
 			m_nRefinementStepsAlpha = quality+1;
@@ -535,9 +543,16 @@ function convertPixels(canvas, fwidth, fheight) {
 			
 			valueTable[canvas] = outimg;
 			var position = 0;
+			var positionEl = document.getElementById("process_position");
+			var lastRepo = Date.now();
 			
 			for (var j=0; j<pix.height/4; j++) { // rows of blocks
 				for (var i=0; i<fwidth/4; i++) { // columns of blocks
+					if (Date.now() - lastRepo > 1000){
+						positionEl.innerText = position + "/" + pix.data.length;
+						lastRepo = Date.now();
+						await sleep();
+					}
 				//blockCount+=1;
 				for (var y = 0; y < 4; y++){
 					for (var x = 0; x < 4; x++){
@@ -570,6 +585,7 @@ function convertPixels(canvas, fwidth, fheight) {
 				blockPosition+=2;
 				}
 			}
+			positionEl.innerHTML = ""
 		}
 		else if(outputType == 0) {
 			outputImage[canvas] = pix.data;
